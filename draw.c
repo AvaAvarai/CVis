@@ -24,6 +24,20 @@ bool* axis_inverted = NULL;
 
 ClassInfo* class_info = NULL;
 int num_classes = 0;
+int hovered_row = -1;
+
+float point_to_line_dist(float px, float py, float x1, float y1, float x2, float y2) {
+    float dx = x2 - x1;
+    float dy = y2 - y1;
+    float mag = sqrtf(dx * dx + dy * dy);
+    dx /= mag;
+    dy /= mag;
+    float lambda = dx * (px - x1) + dy * (py - y1);
+    lambda = fmax(0, fmin(mag, lambda));
+    float closest_x = x1 + lambda * dx;
+    float closest_y = y1 + lambda * dy;
+    return sqrtf((px - closest_x) * (px - closest_x) + (py - closest_y) * (py - closest_y));
+}
 
 void draw_star(float cx, float cy, float size) {
     glColor3f(0.0f, 0.0f, 0.0f); // Set color to black for the star
@@ -385,26 +399,12 @@ int find_or_add_class_label(char*** unique_labels, int* num_labels, const char* 
 }
 
 void draw_parallel_coordinates(float** data, int rows, int cols, int class_col_index, ClassInfo* class_info, int num_classes) {
-    if (DEBUG) {
-        printf("Number of classes: %d\n", num_classes);
-        for (int i = 0; i < num_classes; i++) {
-            printf("Class %d, Name: %s, Color: (%f, %f, %f)\n", i, class_info[i].class_name, class_info[i].r, class_info[i].g, class_info[i].b);
-        }
-    }
-    
+    // Draw all non-highlighted polylines first
     for (int row = 0; row < rows; row++) {
+        if (row == hovered_row) continue; // Skip the hovered row for now
+        
         int class_index = (int)data[row][class_col_index];
-        if (class_index < 0 || class_index >= num_classes) {
-            fprintf(stderr, "Invalid class index %d for row %d\n", class_index, row);
-            continue; // Skip this row if class index is invalid
-        }
-
-        if (DEBUG) {
-            printf("Row %d, Class Index: %d, Assigned Color: (%f, %f, %f)\n", row, class_index, class_info[class_index].r, class_info[class_index].g, class_info[class_index].b);
-        }
-        // Set the color for the current class
         glColor3f(class_info[class_index].r, class_info[class_index].g, class_info[class_index].b);
-
         glBegin(GL_LINE_STRIP);
         for (int col = 0; col < cols; col++) {
             if (col == global_class_col_index) continue;
@@ -414,6 +414,40 @@ void draw_parallel_coordinates(float** data, int rows, int cols, int class_col_i
         }
         glEnd();
     }
+
+    // Now draw the highlighted polyline
+    if (hovered_row >= 0) {
+        glColor3f(1.0f, 1.0f, 0.0f); // Highlight color
+        glLineWidth(3.0f); // Increase line width for highlighting
+        glBegin(GL_LINE_STRIP);
+        for (int col = 0; col < cols; col++) {
+            if (col == global_class_col_index) continue;
+            float x = (col / (float)(cols - 1)) * stretch_factor_x;
+            float y = axis_inverted[col] ? (1.0f - data[hovered_row][col]) * stretch_factor_y : data[hovered_row][col] * stretch_factor_y;
+            glVertex2f(x, y);
+        }
+        glEnd();
+        glLineWidth(1.0f); // Reset line width back to default
+    }
+}
+
+// Function to convert window coordinates to world coordinates
+void window_to_world(int x, int y, float *world_x, float *world_y) {
+    // Get the size of the window
+    int width = glutGet(GLUT_WINDOW_WIDTH);
+    int height = glutGet(GLUT_WINDOW_HEIGHT);
+
+    // Normalize the mouse coordinates to range [0, 1]
+    *world_x = (float)x / (float)width;
+    *world_y = 1.0f - (float)y / (float)height; // Invert y since window coordinates origin is top left
+
+    // Apply the inverse of the scaling transformation
+    *world_x = (*world_x - translate_x) / scale;
+    *world_y = (*world_y - translate_y) / scale;
+
+    // Apply the inverse of the stretch transformation if any
+    *world_x /= stretch_factor_x;
+    *world_y /= stretch_factor_y;
 }
 
 void display() {
@@ -461,6 +495,9 @@ void display() {
         }
     }
 
+    // Reset the line width back to default if you changed it
+    glLineWidth(1.0f);
+
     glPopMatrix();
     glutSwapBuffers();
 }
@@ -494,6 +531,44 @@ void mouse(int button, int state, int x, int y) {
     }
 }
 
+// Mouse motion callback function
+void mouse_motion(int x, int y) {
+    // Convert window coordinates to world coordinates
+    float world_x, world_y;
+    window_to_world(x, y, &world_x, &world_y);
+
+    // Reset hovered row
+    hovered_row = -1;
+    float min_distance = 0.01f; // Set a threshold distance to detect hover
+
+    // Check each polyline
+    for (int row = 0; row < global_rows; row++) {
+        float prev_x = 0.0f;
+        float prev_y = axis_inverted[0] ? (1.0f - global_data[row][0]) * stretch_factor_y : global_data[row][0] * stretch_factor_y;
+
+        for (int col = 1; col < global_cols; col++) {
+            if (col == global_class_col_index) continue; // Skip the class column
+            
+            // Calculate the normalized positions of the points
+            float x = (col / (float)(global_cols - 1)) * stretch_factor_x;
+            float y = axis_inverted[col] ? (1.0f - global_data[row][col]) * stretch_factor_y : global_data[row][col] * stretch_factor_y;
+
+            // Check if the mouse is close to the line segment
+            if (point_to_line_dist(world_x, world_y, prev_x, prev_y, x, y) < min_distance) {
+                hovered_row = row;
+                break; // Stop checking if we've found the polyline being hovered
+            }
+
+            prev_x = x;
+            prev_y = y;
+        }
+        if (hovered_row != -1) break; // Stop the loop if we've found the hovered polyline
+    }
+    
+    // Request a redraw of the scene to update the hover highlight
+    glutPostRedisplay();
+}
+
 int main(int argc, char** argv) {
     if (argc < 2) {
         printf("Usage: %s <csv_file>\n", argv[0]);
@@ -510,6 +585,7 @@ int main(int argc, char** argv) {
     // Set up keyboard callback
     glutKeyboardFunc(keyboard);
     glutMouseFunc(mouse);
+    glutPassiveMotionFunc(mouse_motion);
     
     // Load CSV data
     global_data = load_csv(argv[1], &global_rows, &global_cols, &global_class_col_index, &class_info, &num_classes);
@@ -525,7 +601,7 @@ int main(int argc, char** argv) {
     normalize_data(global_data, global_rows, global_cols, min_vals, max_vals);
 
     glutDisplayFunc(display);
-
+    
     glutMainLoop();
 
     // Free resources
