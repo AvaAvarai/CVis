@@ -1,4 +1,8 @@
 # CVis
+![Iris in PC with x1, x2 invert](pc1.png)
+
+Image of Fisher Iris in PC with x1, x2 invert.
+
 Renders CSV in Parallel Coordinates, handles large datasets. Allows for zoom, pan, stretch, and scale using keyboard, invert of attributes with mouse click.
 
 Written in C using OpenGL and FreeGLUT.
