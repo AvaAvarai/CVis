@@ -774,7 +774,7 @@ void mouse_motion(int x, int y) {
 
 void initScatterPlot() {
     // Set up any specific OpenGL state for the scatter plot window
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // Clear with white background
+    glClearColor(0.9375f, 0.9375f, 0.9375f, 1.0f);
     glEnable(GL_POINT_SMOOTH);
     glPointSize(5.0f); // Set a visible size for points
 }
@@ -783,7 +783,7 @@ void draw_scatter_plot() {
     if (closest_axis1 == -1 || closest_axis2 == -1) return; // Ensure axes are selected
 
     // Clear with white background
-    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    glClearColor(0.9375f, 0.9375f, 0.9375f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT);
 
     // Set up orthographic projection for the scatter plot
