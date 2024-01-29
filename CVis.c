@@ -37,6 +37,7 @@ int scatter_plot_window;
 int parallel_coords_window;
 
 int hovered_row = -1;
+float* density = NULL;
 
 // Function to draw the bounding box
 void draw_bounding_box() {
@@ -496,16 +497,22 @@ int find_or_add_class_label(char*** unique_labels, int* num_labels, const char* 
     return (*num_labels)++;
 }
 
-void draw_parallel_coordinates(float** data, int rows, int cols, int class_col_index, ClassInfo* class_info, int num_classes) {
-    // Draw all non-highlighted polylines first
+void draw_parallel_coordinates(float** data, int rows, int cols, int class_col_index, ClassInfo* class_info, int num_classes, float* density) {
+    // Iterate through each row (data point)
     for (int row = 0; row < rows; row++) {
-        if (row == hovered_row) continue; // Skip the hovered row for now
+        // Skip the hovered row for highlighting
+        if (row == hovered_row) continue;
         
         int class_index = (int)data[row][class_col_index];
         glColor3f(class_info[class_index].r, class_info[class_index].g, class_info[class_index].b);
+
         glBegin(GL_LINE_STRIP);
         for (int col = 0; col < cols; col++) {
             if (col == global_class_col_index) continue;
+
+            // Adjust line thickness based on density
+            glLineWidth(1.0f + density[row * cols + col] * 0.1f); // Example scaling factor for line width
+
             float x = (col / (float)(cols - 1)) * stretch_factor_x;
             float y = axis_inverted[col] ? (1.0f - data[row][col]) * stretch_factor_y : data[row][col] * stretch_factor_y;
             glVertex2f(x, y);
@@ -568,6 +575,33 @@ void window_to_world(int x, int y, float *world_x, float *world_y) {
     *world_y /= stretch_factor_y;
 }
 
+void draw_legend() {
+    // Set the starting position for the legend
+    float x_start = 0.01f, y_start = 0.01f;
+    float box_size = 0.02f; // Size of the colored box
+    float vertical_offset = 0.03f; // Vertical space between lines
+
+    // Loop through each class and draw its color and name
+    for (int i = 0; i < num_classes; i++) {
+        // Set the color for the class
+        glColor3f(class_info[i].r, class_info[i].g, class_info[i].b);
+
+        // Draw a small box with the class color
+        glBegin(GL_QUADS);
+            glVertex2f(x_start, y_start - i * vertical_offset);
+            glVertex2f(x_start + box_size, y_start - i * vertical_offset);
+            glVertex2f(x_start + box_size, y_start - box_size - i * vertical_offset);
+            glVertex2f(x_start, y_start - box_size - i * vertical_offset);
+        glEnd();
+
+        // Set the color for the text (black)
+        glColor3f(0.0f, 0.0f, 0.0f);
+
+        // Render the class name next to the box
+        renderBitmapString(x_start + box_size + 0.01f, y_start - box_size/2 - i * vertical_offset, GLUT_BITMAP_HELVETICA_12, class_info[i].class_name);
+    }
+}
+
 void display() {
     // Clear the color buffer
     glClearColor(0.9375f, 0.9375f, 0.9375f, 1.0f);
@@ -595,8 +629,8 @@ void display() {
     glTranslatef(translate_x, translate_y, 0.0f);
 
     // Draw parallel coordinates
-    if (global_data != NULL && class_info != NULL) {
-        draw_parallel_coordinates(global_data, global_rows, global_cols, global_class_col_index, class_info, num_classes);
+    if (global_data != NULL && class_info != NULL && density != NULL) {
+        draw_parallel_coordinates(global_data, global_rows, global_cols, global_class_col_index, class_info, num_classes, density);
     }
 
     // Draw axis for each attribute
@@ -616,6 +650,8 @@ void display() {
 
     // Reset the line width back to default if you changed it
     glLineWidth(1.0f);
+
+    draw_legend();
 
     glPopMatrix();
     glutSwapBuffers();
@@ -665,6 +701,24 @@ void mouse(int button, int state, int x, int y) {
             check_intersections_and_print_counts();
         }
         glutPostRedisplay();
+    }
+}
+
+void calculate_density(float** data, int rows, int cols, float* density) {
+    // Initialize densities to 0
+    memset(density, 0, sizeof(float) * rows * cols);
+
+    // Define brush size or the distance within which to consider points
+    float brush_size = 0.01f;
+
+    for (int col = 0; col < cols; col++) {
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < rows; j++) {
+                if (i != j && fabs(data[i][col] - data[j][col]) < brush_size) {
+                    density[i * cols + col]++;
+                }
+            }
+        }
     }
 }
 
@@ -799,7 +853,7 @@ int main(int argc, char** argv) {
     glutPassiveMotionFunc(mouse_motion); // Set mouse motion callback for main window
 
     // Create scatter plot window
-    glutInitWindowSize(800, 600); // Or whatever size you want
+    glutInitWindowSize(800, 600);
     glutCreateWindow("Scatter Plot");
     scatter_plot_window = glutGetWindow(); // Get the window ID
     initScatterPlot(); // Initialize OpenGL state for scatter plot window
@@ -812,11 +866,19 @@ int main(int argc, char** argv) {
         fprintf(stderr, "Failed to load data.\n");
         return 1;
     }
-
+   
     // Normalize data
     float min_vals[global_cols], max_vals[global_cols];
     normalize_data(global_data, global_rows, global_cols, min_vals, max_vals);
+    
+    density = (float*)malloc(global_rows * global_cols * sizeof(float));
+    if (!density) {
+        fprintf(stderr, "Failed to allocate memory for density.\n");
+        // Handle the error, such as exiting the program
+    }
+    calculate_density(global_data, global_rows, global_cols, density);
 
+    
     // Start the GLUT main loop
     glutMainLoop();
 
@@ -830,6 +892,6 @@ int main(int argc, char** argv) {
         free(global_data[i]);
     }
     free(global_data);
-    
+    free(density);
     return 0;
 }
