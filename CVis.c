@@ -159,6 +159,18 @@ void draw_star(float cx, float cy, float size) {
 void draw_axes(int cols) {
     glColor3f(0.0f, 0.0f, 0.0f); // Set color for axes (black)
 
+    // Draw horizontal axis (bottom)
+    glBegin(GL_LINES);
+        glVertex2f(0.0f, 0.0f); // Start at bottom left corner
+        glVertex2f(1.0f, 0.0f); // End at bottom right corner
+    glEnd();
+
+    // Draw vertical axis (left)
+    glBegin(GL_LINES);
+        glVertex2f(0.0f, 0.0f); // Start at bottom left corner
+        glVertex2f(0.0f, 1.0f); // End at top left corner
+    glEnd();
+
     for (int col = 0; col < cols; col++) {
         if (col == global_class_col_index) continue; // Skip the 'class' column
 
@@ -795,23 +807,23 @@ void draw_scatter_plot() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
-    // Draw axis lines
+    // Draw axes
     glColor3f(0.0f, 0.0f, 0.0f); // Black color for axes
     glBegin(GL_LINES);
         // X-axis
-        glVertex2f(0.0f, 0.5f);
-        glVertex2f(1.0f, 0.5f);
+        glVertex2f(0.001f, 0.001f); // Start at bottom left corner
+        glVertex2f(1.0f, 0.001f); // End at bottom right corner
         // Y-axis
-        glVertex2f(0.5f, 0.0f);
-        glVertex2f(0.5f, 1.0f);
+        glVertex2f(0.001f, 0.001f); // Start at bottom left corner
+        glVertex2f(0.001f, 1.0f); // End at top left corner
     glEnd();
 
     // Label axes
     char axis1_label[50], axis2_label[50];
     sprintf(axis1_label, "Axis %d", closest_axis1 + 1);
     sprintf(axis2_label, "Axis %d", closest_axis2 + 1);
-    renderBitmapString(0.9f, 0.48f, GLUT_BITMAP_HELVETICA_18, axis1_label); // X-axis label
-    renderBitmapString(0.52f, 0.9f, GLUT_BITMAP_HELVETICA_18, axis2_label);  // Y-axis label
+    renderBitmapString(0.01f, 0.48f, GLUT_BITMAP_HELVETICA_18, axis1_label); // X-axis label
+    renderBitmapString(0.48f, 0.01f, GLUT_BITMAP_HELVETICA_18, axis2_label);  // Y-axis label
 
     // Draw points for each row using data from the two closest axes
     glBegin(GL_POINTS);
