@@ -4,6 +4,7 @@
 #include <stdbool.h>
 #include <math.h>
 #include <ctype.h>
+#include <float.h>
 
 #include <GL/freeglut.h>
 
@@ -22,13 +23,20 @@ bool* axis_inverted = NULL;
 
 ClassInfo* class_info = NULL;
 int num_classes = 0;
-int hovered_row = -1;
+
+int closest_axis1 = -1;
+int closest_axis2 = -1;
 
 // Global variables for bounding box
 bool drawing_box = false;
 bool box_drawn = false;
 float box_start_x, box_start_y;
 float box_end_x, box_end_y;
+
+int scatter_plot_window;
+int parallel_coords_window;
+
+int hovered_row = -1;
 
 // Function to draw the bounding box
 void draw_bounding_box() {
@@ -640,47 +648,95 @@ void mouse(int button, int state, int x, int y) {
     }
 }
 
-// Mouse motion callback function
 void mouse_motion(int x, int y) {
     // Convert window coordinates to world coordinates
     float world_x, world_y;
     window_to_world(x, y, &world_x, &world_y);
 
-    // Update the bounding box end coordinates if it's being drawn
-    if (drawing_box) {
-        box_end_x = world_x;
-        box_end_y = world_y;
-    }
+    // Find the two closest axes
+    closest_axis1 = -1;
+    closest_axis2 = -1;
+    float min_distance1 = FLT_MAX;
+    float min_distance2 = FLT_MAX;
 
-    // Reset hovered row
-    hovered_row = -1;
-    float min_distance = 0.01f; // Set a threshold distance to detect hover
+    for (int col = 0; col < global_cols; col++) {
+        if (col == global_class_col_index) continue;
 
-    // Check each polyline
-    for (int row = 0; row < global_rows; row++) {
-        float prev_x = 0.0f;
-        float prev_y = axis_inverted[0] ? (1.0f - global_data[row][0]) * stretch_factor_y : global_data[row][0] * stretch_factor_y;
+        float axis_x = (float)col / (global_cols - 1);
+        float distance = fabs(world_x - axis_x);
 
-        for (int col = 1; col < global_cols; col++) {
-            if (col == global_class_col_index) continue; // Skip the class column
-            
-            // Calculate the normalized positions of the points
-            float x = (col / (float)(global_cols - 1)) * stretch_factor_x;
-            float y = axis_inverted[col] ? (1.0f - global_data[row][col]) * stretch_factor_y : global_data[row][col] * stretch_factor_y;
-
-            // Check if the mouse is close to the line segment
-            if (point_to_line_dist(world_x, world_y, prev_x, prev_y, x, y) < min_distance) {
-                hovered_row = row;
-                break; // Stop checking if we've found the polyline being hovered
-            }
-
-            prev_x = x;
-            prev_y = y;
+        if (distance < min_distance1) {
+            min_distance2 = min_distance1;
+            closest_axis2 = closest_axis1;
+            min_distance1 = distance;
+            closest_axis1 = col;
+        } else if (distance < min_distance2) {
+            min_distance2 = distance;
+            closest_axis2 = col;
         }
-        if (hovered_row != -1) break; // Stop the loop if we've found the hovered polyline
     }
+
+    // Find the closest row (point) to the mouse position
+    hovered_row = -1;
+    float min_distance = FLT_MAX;
+    for (int row = 0; row < global_rows; row++) {
+        float x_pos = (float)closest_axis1 / (global_cols - 1);
+        float y_pos = global_data[row][closest_axis1];
+
+        float distance = sqrt((world_x - x_pos) * (world_x - x_pos) + (world_y - y_pos) * (world_y - y_pos));
+        if (distance < min_distance) {
+            min_distance = distance;
+            hovered_row = row;
+        }
+    }
+
+    // Switch to the scatter plot window and request redisplay
+    glutSetWindow(scatter_plot_window);
+    glutPostRedisplay();
+}
+
+void initScatterPlot() {
+    // Set up any specific OpenGL state for the scatter plot window
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f); // Clear with white background
+    glEnable(GL_POINT_SMOOTH);
+    glPointSize(5.0f); // Set a visible size for points
+}
+
+void draw_scatter_plot() {
+    if (closest_axis1 == -1 || closest_axis2 == -1) return; // Ensure axes are selected
+
+    // Clear with white background
+    glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Set up orthographic projection for the scatter plot
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(0, 1, 0, 1); // Coordinate range [0, 1] for both x and y
+
+    // Set modelview matrix
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+
+    // Draw points for each row using data from the two closest axes
+    glBegin(GL_POINTS);
+    for (int row = 0; row < global_rows; row++) {
+        // Use color based on class
+        int class_index = (int)global_data[row][global_class_col_index];
+        glColor3f(class_info[class_index].r, class_info[class_index].g, class_info[class_index].b);
+
+        // Calculate x, y coordinates of the point based on the closest axes
+        float x = global_data[row][closest_axis1];
+        float y = global_data[row][closest_axis2];
+        glVertex2f(x, y); // Plot the point
+    }
+    glEnd();
+
+    // Swap the buffers to display the scatter plot
+    glutSwapBuffers();
     
     glutPostRedisplay();
+    glutSetWindow(parallel_coords_window);
 }
 
 int main(int argc, char** argv) {
@@ -689,22 +745,31 @@ int main(int argc, char** argv) {
         return 1;
     }
 
+    // Initialize GLUT
     glutInit(&argc, argv);
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB);
+
+    // Create main window for parallel coordinates
     glutInitWindowSize(800, 600);
     glutCreateWindow("Parallel Coordinates");
-    
-    init();
-    
-    // Set up keyboard callback
-    glutKeyboardFunc(keyboard);
-    glutMouseFunc(mouse);
-    glutPassiveMotionFunc(mouse_motion);
+    parallel_coords_window = glutGetWindow(); // Store the window ID
+    init(); // Initialize OpenGL state for the main window
+
+    glutDisplayFunc(display); // Set display callback for main window
+    glutKeyboardFunc(keyboard); // Set keyboard callback for main window
+    glutMouseFunc(mouse); // Set mouse callback for main window
+    glutPassiveMotionFunc(mouse_motion); // Set mouse motion callback for main window
+
+    // Create scatter plot window
+    glutInitWindowSize(800, 600); // Or whatever size you want
+    glutCreateWindow("Scatter Plot");
+    scatter_plot_window = glutGetWindow(); // Get the window ID
+    initScatterPlot(); // Initialize OpenGL state for scatter plot window
+    glutDisplayFunc(draw_scatter_plot); // Set display callback
     
     // Load CSV data
     global_data = load_csv(argv[1], &global_rows, &global_cols, &global_class_col_index, &class_info, &num_classes);
     axis_inverted = (bool*)calloc(global_cols, sizeof(bool));
-
     if (global_data == NULL) {
         fprintf(stderr, "Failed to load data.\n");
         return 1;
@@ -714,8 +779,7 @@ int main(int argc, char** argv) {
     float min_vals[global_cols], max_vals[global_cols];
     normalize_data(global_data, global_rows, global_cols, min_vals, max_vals);
 
-    glutDisplayFunc(display);
-    
+    // Start the GLUT main loop
     glutMainLoop();
 
     // Free resources
@@ -724,6 +788,10 @@ int main(int argc, char** argv) {
         free(class_info[i].class_name);
     }
     free(class_info);
+    for (int i = 0; i < global_rows; i++) {
+        free(global_data[i]);
+    }
+    free(global_data);
     
     return 0;
 }
