@@ -7,8 +7,6 @@
 
 #include <GL/freeglut.h>
 
-#define MAX_LINE_LENGTH 1024
-
 #define DEBUG FALSE
 
 typedef struct {
@@ -25,6 +23,100 @@ bool* axis_inverted = NULL;
 ClassInfo* class_info = NULL;
 int num_classes = 0;
 int hovered_row = -1;
+
+// Global variables for bounding box
+bool drawing_box = false;
+bool box_drawn = false;
+float box_start_x, box_start_y;
+float box_end_x, box_end_y;
+
+// Function to draw the bounding box
+void draw_bounding_box() {
+    if (drawing_box || box_drawn) {
+        glColor3f(1.0f, 0.0f, 0.0f); // Red color for the bounding box
+        glLineWidth(1.0f);
+        glBegin(GL_LINE_LOOP);
+        glVertex2f(box_start_x, box_start_y);
+        glVertex2f(box_end_x, box_start_y);
+        glVertex2f(box_end_x, box_end_y);
+        glVertex2f(box_start_x, box_end_y);
+        glEnd();
+    }
+}
+
+char* read_line(FILE *fp) {
+    char *line = NULL;
+    size_t capacity = 0;
+    size_t len = 0;
+    int ch;
+
+    while ((ch = fgetc(fp)) != EOF && ch != '\n') {
+        if (len + 1 >= capacity) {
+            capacity = capacity == 0 ? 1 : capacity * 2;
+            char *new_line = realloc(line, capacity);
+            if (new_line == NULL) {
+                free(line);
+                return NULL; // Memory allocation failed
+            }
+            line = new_line;
+        }
+        line[len++] = ch;
+    }
+
+    if (len == 0 && ch == EOF) {
+        free(line);
+        return NULL; // End of file reached with no content read
+    }
+
+    // Null-terminate the string
+    char *new_line = realloc(line, len + 1);
+    if (new_line == NULL) {
+        free(line);
+        return NULL; // Memory allocation failed
+    }
+    new_line[len] = '\0';
+    return new_line;
+}
+
+// Function to check if a line segment intersects the bounding box
+bool line_intersects_box(float x1, float y1, float x2, float y2) {
+    // Check if either end of the line segment is inside the bounding box
+    bool start_inside = x1 >= box_start_x && x1 <= box_end_x && y1 >= box_start_y && y1 <= box_end_y;
+    bool end_inside = x2 >= box_start_x && x2 <= box_end_x && y2 >= box_start_y && y2 <= box_end_y;
+    return start_inside || end_inside;
+}
+
+// Function to check intersections and print class counts
+void check_intersections_and_print_counts() {
+    int *class_counts = calloc(num_classes, sizeof(int));
+
+    for (int row = 0; row < global_rows; row++) {
+        bool intersects = false;
+        for (int col = 1; col < global_cols; col++) {
+            if (col == global_class_col_index) continue;
+
+            float x1 = (col - 1) / (float)(global_cols - 1) * stretch_factor_x;
+            float y1 = axis_inverted[col - 1] ? (1.0f - global_data[row][col - 1]) * stretch_factor_y : global_data[row][col - 1] * stretch_factor_y;
+            float x2 = col / (float)(global_cols - 1) * stretch_factor_x;
+            float y2 = axis_inverted[col] ? (1.0f - global_data[row][col]) * stretch_factor_y : global_data[row][col] * stretch_factor_y;
+
+            if (line_intersects_box(x1, y1, x2, y2)) {
+                intersects = true;
+                break;
+            }
+        }
+        if (intersects) {
+            int class_index = (int)global_data[row][global_class_col_index];
+            class_counts[class_index]++;
+        }
+    }
+
+    for (int i = 0; i < num_classes; i++) {
+        printf("Class %s: %d\n", class_info[i].class_name, class_counts[i]);
+    }
+
+    free(class_counts);
+}
 
 float point_to_line_dist(float px, float py, float x1, float y1, float x2, float y2) {
     float dx = x2 - x1;
@@ -299,10 +391,11 @@ float** load_csv(const char* filename, int* rows, int* cols, int* class_col_inde
         return NULL;
     }
 
-    char line[MAX_LINE_LENGTH];
-
+    char* line;
+    
     // Read the header line and count columns
-    if (fgets(line, MAX_LINE_LENGTH, file) == NULL) {
+    line = read_line(file);
+    if (line == NULL) {
         fclose(file);
         return NULL;
     }
@@ -323,14 +416,19 @@ float** load_csv(const char* filename, int* rows, int* cols, int* class_col_inde
     if (*class_col_index == -1) {
         printf("Error: 'class' column not found\n");
         fclose(file);
+        free(line);
         return NULL;
     }
+    free(line); // Free the memory allocated by read_line
 
     // Count rows
     *rows = 0;
-    while (fgets(line, MAX_LINE_LENGTH, file) != NULL) {
+    while ((line = read_line(file)) != NULL) {
         (*rows)++;
+        free(line); // Free the memory allocated by read_line
     }
+    rewind(file);
+    free(read_line(file)); // Skip header line and free the memory
 
     // Allocate memory for data
     float** data = (float**)malloc(*rows * sizeof(float*));
@@ -338,14 +436,10 @@ float** load_csv(const char* filename, int* rows, int* cols, int* class_col_inde
         data[i] = (float*)malloc(*cols * sizeof(float));
     }
 
-    // Rewind file to read data
-    rewind(file);
-    fgets(line, MAX_LINE_LENGTH, file); // Skip header line
-
     // Process data and class labels
     *num_classes = 0;
     *class_info = (ClassInfo*)malloc(sizeof(ClassInfo));
-    for (int i = 0; fgets(line, MAX_LINE_LENGTH, file) != NULL; i++) {
+    for (int i = 0; (line = read_line(file)) != NULL; i++) {
         token = strtok(line, ",");
         for (int j = 0; j < *cols; j++) {
             if (j == *class_col_index) {
@@ -353,16 +447,12 @@ float** load_csv(const char* filename, int* rows, int* cols, int* class_col_inde
                 int label_index = get_class_index(class_info, num_classes, class_label);
                 free(class_label);
                 data[i][j] = (float)label_index;
-
-                // Debug print to check the class index stored in global_data
-                if (DEBUG) {
-                    printf("Row %d, Class Label: '%s', Stored Index: %d\n", i, class_label, label_index);
-                }
             } else {
-                data[i][j] = atof(token); // Convert to float and store in data array
+                data[i][j] = atof(token);
             }
             token = strtok(NULL, ",");
         }
+        free(line); // Free the memory allocated by read_line
     }
 
     fclose(file);
@@ -483,7 +573,8 @@ void display() {
 
     // Draw axis for each attribute
     draw_axes(global_cols);
-
+    draw_bounding_box();
+    
     // Draw stars for inverted axes
     for (int col = 0; col < global_cols; col++) {
         if (col == global_class_col_index) continue; // Skip the 'class' column
@@ -529,6 +620,24 @@ void mouse(int button, int state, int x, int y) {
             }
         }
     }
+    
+    if (button == GLUT_RIGHT_BUTTON) {
+        if (state == GLUT_DOWN && !drawing_box) {
+            // First right-click: Start drawing the bounding box
+            window_to_world(x, y, &box_start_x, &box_start_y);
+            box_end_x = box_start_x; // Initialize to the start values
+            box_end_y = box_start_y;
+            drawing_box = true;
+            box_drawn = false;
+        } else if (state == GLUT_DOWN && drawing_box) {
+            // Second right-click: Finalize the bounding box
+            window_to_world(x, y, &box_end_x, &box_end_y);
+            drawing_box = false;
+            box_drawn = true;
+            check_intersections_and_print_counts();
+        }
+        glutPostRedisplay();
+    }
 }
 
 // Mouse motion callback function
@@ -536,6 +645,12 @@ void mouse_motion(int x, int y) {
     // Convert window coordinates to world coordinates
     float world_x, world_y;
     window_to_world(x, y, &world_x, &world_y);
+
+    // Update the bounding box end coordinates if it's being drawn
+    if (drawing_box) {
+        box_end_x = world_x;
+        box_end_y = world_y;
+    }
 
     // Reset hovered row
     hovered_row = -1;
@@ -565,7 +680,6 @@ void mouse_motion(int x, int y) {
         if (hovered_row != -1) break; // Stop the loop if we've found the hovered polyline
     }
     
-    // Request a redraw of the scene to update the hover highlight
     glutPostRedisplay();
 }
 
