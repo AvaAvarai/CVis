@@ -1,5 +1,5 @@
 # CVis
-![Iris in PC with x1, x2 invert](pc2.png)
+![Parallel Coordinates with Scatter Plot](pc_scatterplot.png)
 
 Image of Fisher Iris in PC with x1, x2 invert.
 
