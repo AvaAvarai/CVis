@@ -1,6 +1,6 @@
 # CVis: C Visualizer of Parallel Coordinates & Scatter Plot
 ![Parallel Coordinates with Scatter Plot](pc_scatterplot.png)
-Image of Wheat Seeds in Parallel Coordinates with Scatter Plot.
+Image of Fisher Iris in Parallel Coordinates with Scatter Plot.
 
 ### About
 

@@ -358,7 +358,7 @@ void keyboard(unsigned char key, int x, int y) {
             }
     }
     if (DEBUG) {
-        printf("Transforms %d, %d, %d, %d, %d\n", stretch_factor_x, stretch_factor_y, scale, translate_x, translate_y);
+        printf("Transforms %lf, %lf, %lf, %lf, %lf\n", stretch_factor_x, stretch_factor_y, scale, translate_x, translate_y);
     }
     glutPostRedisplay();
 }
@@ -529,6 +529,26 @@ void draw_parallel_coordinates(float** data, int rows, int cols, int class_col_i
     }
 }
 
+void renderBitmapString(float x, float y, void *font, char *string) {
+    char *c;
+    glRasterPos2f(x, y);
+    for (c = string; *c != '\0'; c++) {
+        glutBitmapCharacter(font, *c);
+    }
+}
+
+void draw_axis_labels() {
+    if (closest_axis1 != -1 && closest_axis2 != -1) {
+        char axis1_label[50], axis2_label[50];
+        sprintf(axis1_label, "Axis %d", closest_axis1 + 1);
+        sprintf(axis2_label, "Axis %d", closest_axis2 + 1);
+
+        glColor3f(0.0, 0.0, 0.0); // Black color for text
+        renderBitmapString(0.1, 0.95, GLUT_BITMAP_HELVETICA_18, axis1_label); // Render Axis 1 label
+        renderBitmapString(0.1, 0.9, GLUT_BITMAP_HELVETICA_18, axis2_label);  // Render Axis 2 label
+    }
+}
+
 // Function to convert window coordinates to world coordinates
 void window_to_world(int x, int y, float *world_x, float *world_y) {
     // Get the size of the window
@@ -612,7 +632,7 @@ void init() {
 void mouse(int button, int state, int x, int y) {
     if (button == GLUT_LEFT_BUTTON && state == GLUT_DOWN) {
         int width = glutGet(GLUT_WINDOW_WIDTH);
-        int height = glutGet(GLUT_WINDOW_HEIGHT);
+        //int height = glutGet(GLUT_WINDOW_HEIGHT);
         float normalized_x = (float)x / (float)width;
         float axis_space = 1.0f / (global_cols - 1);
 
@@ -690,8 +710,11 @@ void mouse_motion(int x, int y) {
         }
     }
 
-    // Switch to the scatter plot window and request redisplay
+    // Request to redraw both windows
     glutSetWindow(scatter_plot_window);
+    glutPostRedisplay();
+
+    glutSetWindow(parallel_coords_window);
     glutPostRedisplay();
 }
 
@@ -718,6 +741,24 @@ void draw_scatter_plot() {
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
 
+    // Draw axis lines
+    glColor3f(0.0f, 0.0f, 0.0f); // Black color for axes
+    glBegin(GL_LINES);
+        // X-axis
+        glVertex2f(0.0f, 0.5f);
+        glVertex2f(1.0f, 0.5f);
+        // Y-axis
+        glVertex2f(0.5f, 0.0f);
+        glVertex2f(0.5f, 1.0f);
+    glEnd();
+
+    // Label axes
+    char axis1_label[50], axis2_label[50];
+    sprintf(axis1_label, "Axis %d", closest_axis1 + 1);
+    sprintf(axis2_label, "Axis %d", closest_axis2 + 1);
+    renderBitmapString(0.9f, 0.48f, GLUT_BITMAP_HELVETICA_18, axis1_label); // X-axis label
+    renderBitmapString(0.52f, 0.9f, GLUT_BITMAP_HELVETICA_18, axis2_label);  // Y-axis label
+
     // Draw points for each row using data from the two closest axes
     glBegin(GL_POINTS);
     for (int row = 0; row < global_rows; row++) {
@@ -734,9 +775,6 @@ void draw_scatter_plot() {
 
     // Swap the buffers to display the scatter plot
     glutSwapBuffers();
-    
-    glutPostRedisplay();
-    glutSetWindow(parallel_coords_window);
 }
 
 int main(int argc, char** argv) {
