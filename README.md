@@ -6,6 +6,8 @@ Image of Wheat Seeds in Parallel Coordinates with Scatter Plot.
 
 Renders CSV in Parallel Coordinates + Scatter Plot, handles large datasets. Zoom, pan, stretch, scale using keyboard, invert of attributes with mouse click
 
+Supports multi-monitor for expanding data to better locate patterns.
+
 Written in C using OpenGL and FreeGLUT.
 
 ### Controls
