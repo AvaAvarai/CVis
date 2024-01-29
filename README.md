@@ -8,6 +8,8 @@ Renders CSV in Parallel Coordinates + Scatter Plot, handles large datasets. Zoom
 
 Supports multi-monitor for expanding data to better locate patterns.
 
+Star below an axis denote inversion of the axis where range [0, 1] -> [1, 0].
+
 Written in C using OpenGL and FreeGLUT.
 
 ### Controls
